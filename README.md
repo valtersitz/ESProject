@@ -9,5 +9,9 @@ ESPs Network of sensors.
 
 -Barometer Graphic Interface in html and Server Example: Digital barometer 
 
+-ESP EASY, our template for a perfect project: http://www.esp8266.nu/index.php/ESPEasy 
+
+
+
 ---------------------
 -Optionnal infos about the Network architecture: Network Mesh-ESP-Mesh Resources | Espressif Systems 
