@@ -1,53 +1,79 @@
-***********************************************************************
-                            MESH NETWORK
-***********************************************************************
+--***********************************************************************
+--                           MESH NETWORK
+--***********************************************************************
 
-myNode = 1 --my node number
-partnerNode = 1 -- output the value of this node (can output more than one if needed)
-networkSize =  -- number of ESPs in the network, up to 99 for now
+
+
+
+--*****************************************************
+--     NETWORK ROUTINE       
+--*****************************************************
+
+-- main loop
+
+wifi.setmode(wifi.STATIONAP)    --turn on wifi
+
+numberNodes = 0  -- number of ESPs in the network, up to 99 for now, setting in the webinterface
+numAvNode = 0 --number of available nodes around
+avNode={} --available nodes around
+newNode = 0 --notification of new node in the network
+
+
+function listap(t)
+    --print("\n\t\t\tSSID\t\t\t\t\tBSSID\t\t\t  RSSI\t\tAUTHMODE\t\tCHANNEL")
+    for bssid,v in pairs(t) do
+        local ssid, rssi, authmode, channel = string.match(v, "([^,]+),([^,]+),([^,]+),([^,]*)")
+        --print(string.format("%32s",ssid).."\t"..bssid.."\t  "..rssi.."\t\t"..authmode.."\t\t\t"..channel)
+        if string.find(ssid,"ESP") then --if AP starting with "ESP", get the node number
+            numAvNode=numNode+1
+            avNode[numNode] = string.sub(ssid,4,2) -- give the node ID back
+            numberNodes=string.sub(ssid,7) -- give back the size of the network - SSID = ESPXX_YY
+            newNode = 1  -- tag to know we will need to change suffixe of ssid
+        end
+     end
+end
+
+wifi.sta.getap(1, listap) --do it every 10s to detect new and dead nodes around
+
+if numAvNode==0 then
+    print("No nodes availables around")
+end
+
+
+
+--[[ to print the available nodes
+tmr.alarm(0,1000,1, function() 
+    for i=1,numAvNode,1 do 
+     print(avNode[i])
+    end
+end)
+]]
+     
+
+--*****************************************************
+--      PARSING MESSAGE
+--*****************************************************
+
+myNode = 0 --my node number, get this from settings page 
+nodeTime = 0
+
 
 -- global variables, keeps the stack small and more predictable if all variables are global
-
-unsigned long timeCentral = 0xFFFFF800 -- synchronise with node 0, as can't reset the millis counter. start high so can spot rollover errors (otherwise every 49 days)
-unsigned long timeOffset  = 0xFFFFF800 -- offset from my local millis counter - numbers set so if program node 0, it does a refresh immediately
-valueSensor1{} -- tab to store sensor's value
+timeCentral = 0xFFFFF800 -- synchronise with node 0, as can't reset the millis counter. start high so can spot rollover errors (otherwise every 49 days)
+--timeOffset  = 0xFFFFF800 -- offset from my local millis counter - numbers set so if program node 0, it does a refresh immediately
+valueSensor1{} -- tab to store sensor's values
 valueSensor2{} 
 valueSensor3{} 
 valueSensor4{} 
+command{}
 nodeTimestamps{} -- timestamps for each value
 lowestNode = 255 -- 0 to 15, 255 is false, 0-15 is node last got a time sync signal from, actually the "main node"
-inPacketLen = 0
 
-void setup() -- usefull?
-{
-  outputRS232();
-}
-
-void loop() --usefull?
-{
-  rxRadio(); -- NOT APPLICABLE HERE: send the message through radio, all the nodes get the message, upload its data during time slot and send it to everyone. 
-  NodeTimeSlot(); -- have to find an algorithm to make sure every node upload its data as fast as possible
-}
-
- 
-// start radio routines
-
-void txRadio(char c)
-{
-  // send a byte via radio, will display on the remote screen
-  altSerial.write(c);
-}  
-
-void rxRadio()
-{
-  byte c;
-  while (altSerial.available())
-  {
-    c = altSerial.read(); // fetch the byte
-    processRadioString(c); // is it a command?
-  }  
-  
-}  
+receivedString= "" -- message received
+myNodeString = "" -- message to be sent
+--prevNode = nil -- node from which we got the message
+destNode = 0 --node we want to send the message to
+nearestNode = 0 -- node we are going to send the message to
 
 function  processReceivedString(receivedString) -- returns the location of infos in the message
   --if (radioString.startsWith("SSID=")) { processSSID();} // parse commands
@@ -56,9 +82,10 @@ function  processReceivedString(receivedString) -- returns the location of infos
    --if (radioString.startsWith("Pack=")) { processPacket();} // all data in one large packet - too large somewhere around 100 bytes starts to error
    --and now delete the receivedstring
    --receivedString = ""; 
+   createDataMessage()
 end  
   
-
+--this function get centralTime from the message, synchronize nodeTime to current loop and change centralTime when in main ESP
 function processTimeSignal(timeLoc) -- Synchronize all nodes to the first running node ("main"). pass Time03FFFFFFFF where 03 is the previous node and the rest is the number of ms in hexa
  s = strsub (receivedString,timeLoc+4,timeLoc+14);
   --[[   INTENT TO ADAPT INSTRUCTABLE CODE BUT CAN'T SEE THE USE
@@ -75,10 +102,11 @@ end]]
  if tmr.now() < centraltime then        -- if late
     nodetime = centraltime              -- get the right time, synchronization of the system
  else 
-    centralTime = tmr.now()             -- update the system time
-    comTime = centralTime-centraltime   -- get the communication time between ESPs 
+    centralTime = tmr.now()             -- update the system time every time we pass through Main ESP
+    --comTime = centralTime-centraltime   -- get the communication time between ESPs 
+    lowestNode = strsub(s,1,2)          -- previous main must have stop and hotstandby becomes Main
  end 
- transmitTime(ReceivedString)
+ --transmitTime(ReceivedString) -- done in create message
 end -- issue to solve: every 49 days centralTime must be reset   
 
 --[[{       INTRUCTABLE CODE -- can't understand the point of this
@@ -113,122 +141,86 @@ end -- issue to solve: every 49 days centralTime must be reset
   timeCentral = ((unsigned long) millis()) + timeOffset;
 }]]
  
-
+--[[not usefull
 function transmitTime(receivedString) -- send my local time, will converge on the lowest node number's time
   newMessage = strsub (receivedString,timeLoc+4,timeLoc+14)..mynode..centralTime..strsub (receivedString,timeLoc+24)
-  --send 
-end 
+  return newMessage --send 
+end ]]
 
-String stringLeft(String s, int i) // stringLeft("mystring",2) returns "my"
-{
-  String t;
-  t = s.substring(0,i);
-  return t;
-}  
+function processDataMessage(dataLoc) -- Data0312AAAAAAAACBBBBBBBBcrlf where 03 is from, 12 is node (hex), AAAA is integer data, C command, BBBBBBBB is the time stamp
+  for i = 0, numberNodes-1, 1 do 
+    destNode = strsub(receivedString, dataLoc+4, dataLoc+6)    
+    node = strsub(receivedString, dataLoc+6 + i*19, dataLoc+6 + i*19 + 2)   -- 1 data = 2 hexa char, 5 data per node (node and sensors) + 1 command + 8 hexa for timeStamp = 19 char
+    nodeTimeStamps[i]=strsub(receivedString, dataLoc+6 + i*19 + 13, dataLoc+6 + i*19 + 21)
+    if (nodeTimeStamps[i] > nodeTime) then -- /!\ myNode DATA MUST BE UPLOAD AFTER THIS FUNCTION, OTHERWISE DATA WILL BE ERASED - saving latest data (ie of the current loop) to communicate the data through
+        valueSensor1[i]=strsub(receivedString, dataLoc+6 + i*19 + 2, dataLoc+6 + i*19 + 4)
+        valueSensor2[i]=strsub(receivedString, dataLoc+6 + i*19 + 4, dataLoc+6 + i*19 + 6)
+        valueSensor3[i]=strsub(receivedString, dataLoc+6 + i*19 + 6, dataLoc+6 + i*19+ 8)
+        valueSensor4[i]=strsub(receivedString, dataLoc+6 + i*19 + 8, dataLoc+6 + i*19+ 10)
+        command[i]=strsub(receivedString, dataLoc+6 + i*19 + 10, dataLoc+4 + i*19 + 11)
+    end
+    print(i) -- test: i should = node 
+    print(node)
+   end
+   if destNode == myNode then   -- deal with the ROUTING PROCESS! a destNode is assigned at the beginning of the message. If reached, destNode incremented or reset, if not send to closest lower node
+    if myNode~=numberNodes-1 then
+        destNode=myNode+1
+    else destNode=0
+    end
+   end
+   updateCommand()
+   updateMyValues() --read sensors and update myNode values
+   printmyData()
+   receivedString = "" --reset received message
+end  
 
-String stringMid(String s, int i, int j) // stringmid("mystring",4,3) returns "tri" (index is 1, not zero)
-{
-  String t;
-  t = s.substring(i-1,i+j-1);
-  return t;
-}  
-  
-void processDataMessage() // Data=0312AAAABBBBBBBBcrlf where 03 is from, 12 is node (hex), AAAA is integer data, BBBBBBBB is the time stamp
-{
-  String s;
-  unsigned long node;
-  unsigned long valueA0;
-  unsigned long valueA1;
-  unsigned long timestamp;
-  unsigned long from;
-  unsigned long age;
-  unsigned long previousage;
-  //printlcdstring("."); // print a dot as data comes in
-  s = "000000" + stringMid(radioString,6,2); // node is 2 bytes
-  from = hexToUlong(s); // get where this data came from
-  s = "000000" + stringMid(radioString,8,2); // node number
-  node = hexToUlong(s);
-  s = "0000" + stringMid(radioString,10,4); // get the 2 bytes A0 value
-  valueA0 = hexToUlong(s);
-  s = "0000" + stringMid(radioString,14,4); // get the 2 bytes A1 value
-  valueA1 = hexToUlong(s);
-  s = stringMid(radioString,18,8);
-  timestamp = hexToUlong(s);
-  age = (unsigned long) (timeCentral - timestamp);
-  previousage = (unsigned long) (timeCentral - nodeTimestamps[node]);
-  if (age < previousage) // more recent data so update
-  {
-    nodeTimestamps[node] = timestamp; // update the time stamp
-    nodeValuesA0[node] = (int) valueA0; // update the values
-    nodeValuesA1[node] = (int) valueA1; // A1 as well
-    //printlcdstring("Update node");
-    //printlcdstringln((String) node);
-    analogOutput(); // update the analog outputs
-  }  
-}  
+function createDataMessage() -- (read sensors) and create data string
+  myNodeString = "Time"..centralTime.."Data".. destNode -- to the destination node
+  --delay(150); // for any previous message to go through
+  for i=0, numberNodes, 1 do
+    myNodeString = myNodeString..i..valueSensor1[i]..valueSensor2[i]..valueSensor3[i]..valueSensor4[i]..command[i]..nodeTimeStamps[i]
+    -- send -altSerial.println(buildMessage); // transmit via radio
+    --delay(150); // errors on 75, ok on 100
+  end
+end  
 
-void createDataMessage() // read A0 and A1 create data string
-{
-  String s;
-  byte i;
-  String buildMessage;
-  unsigned long u;
-  String myNodeString;
-  updateMyValue(); // update my analog input
-  lnprintlcd("My values=");
-  printlcdstring((String) nodeValuesA0[myNode]);
-  printlcdstring(",");
-  printlcdstring((String) nodeValuesA1[myNode]);
-  u = (unsigned long) myNode;
-  s = ulongToHex(u);
-  myNodeString = "Data=" + stringMid(s,7,2); // from me
-  delay(150); // for any previous message to go through
-  for (i=0;i<16;i++) {
-    buildMessage = myNodeString; // start building a string
-    u = (unsigned long) i; // 0 to 15 - 2 bytes for the actual node number
-    s = ulongToHex(u);
-    buildMessage += stringMid(s,7,2);
-    u = (unsigned long) nodeValuesA0[i];
-    s = ulongToHex(u);
-    buildMessage += stringMid(s,5,4); // data value in hex for A0
-    u = (unsigned long) nodeValuesA1[i];
-    s = ulongToHex(u);
-    buildMessage += stringMid(s,5,4); // data value in hex for A1
-    s = ulongToHex(nodeTimestamps[i]); // timestamp value for this node
-    buildMessage += s;// add this
-    altSerial.println(buildMessage); // transmit via radio
-    delay(150); // errors on 75, ok on 100
-  }
-}  
+--*********************************************************************
+--              ANALOG ROUTINE
+--*********************************************************************
 
-void outputRS232() // output all mesh values in one long hex string to RS232 port aaaabbbbccccdddd etc where a is node 0 value 0, b is node 0 value 1, c is node 1 value 0
-{
-  String buildMessage;
-  byte i;
-  String s;
-  unsigned long u;
-  buildMessage = "All values=";
-  for (i=0;i<16;i++) {
-    u = (unsigned long) nodeValuesA0[i];
-    s = ulongToHex(u);
-    buildMessage += stringMid(s,5,4); // data value in hex for A0
-    u = (unsigned long) nodeValuesA1[i];
-    s = ulongToHex(u);
-    buildMessage += stringMid(s,5,4); // data value in hex for A1
-   }   
- Serial.println(buildMessage);  
-}  
-  
-void updateMyValue()
-{
-  refreshTime(); // timecentral
-  int sensorValue = analogRead(A0);
-  nodeValuesA0[myNode] = sensorValue;
-  sensorValue = analogRead(A1);
-  nodeValuesA1[myNode] = sensorValue;
-  nodeTimestamps[myNode] = timeCentral; // this was updated now
-}  
 
+function updateCommand()
+  gpio.mode(6,gpio.OUTPUT) -- GPIO12 output
+  if command[myNode] then
+    gpio.write(6, gpio.HIGH)
+  else gpio.write(6, gpio.LOW)
+  end
+end
+
+function updateMyValue() --sensors - be sure to adc.force_init_mode(adc.INIT_ADC) in init.lua
+  gpio.mode(5,gpio.OUTPUT) -- GPIO14 output
+  gpio.mode(0,gpio.OUTPUT) -- GPIO16 output
+  --set ADC
+  gpio.write(5, gpio.LOW)
+  gpio.write(0, gpio.LOW)
+  valueSensor1[myNode] = adc.read(0)  --read adc entry. ADC RETURNS 10 BITS, SHOULD BE CORRECTED
+  tmr.delay(10)                     --next tmr - MUST be improve! make de proc busy for 10us, not te best option
+  gpio.write(5, gpio.HIGH)
+  gpio.write(0, gpio.LOW)
+  valueSensor2[myNode] = adc.read(0)  
+  tmr.delay(10)--next tmr
+  gpio.write(5, gpio.LOW)
+  gpio.write(0, gpio.HIGH)
+  valueSensor3[myNode] = adc.read(0)  
+  tmr.delay(10)--next tmr
+  gpio.write(5, gpio.HIGH)
+  gpio.write(0, gpio.HIGH)
+  valueSensor4[myNode] = adc.read(0) 
+  tmr.delay(10) 
+  nodeTimestamps[myNode] = timeCentral --this was updated now
+end
+
+--[[ SHOULD NOT USE IT IF COMMUNICATION WITH ALGORITHM  - here a node send data to all other by radio and upload its data when on its timeslot. Our message goes through one node at a time
 void NodeTimeSlot() // takes 100ms at beginning of slot so don't tx during this time.
 // time slots are 4096 milliseconds - easier to work with binary maths
 {
@@ -286,17 +278,20 @@ int getTimeSlot() // find out which time slot we are in
 //  printlcdstring(",");
 //  printlcdstring((String) nodeValuesA1[partnerNode]);
 //}  
+]]
 
-void printNode(int x) // print current node
-{
-  printlcdstring("= ");
-  printlcdstring((String) nodeValuesA0[x]);
-  printlcdstring(",");
-  printlcdstring((String) nodeValuesA1[x]);
+function printNodeData() 
+  print(receivedString)
+  print(myNode)
+  print(valueSensor1[myNode])
+  print(valueSensor2[myNode])
+  print(valueSensor3[myNode])
+  print(valueSensor4[myNode])
+  print(nodeTimeStamps[myNode])
+  print(centralTime)
+end  
   
-}  
-  
-/* This function places the current value of the heap and stack pointers in the
+--[[/* This function places the current value of the heap and stack pointers in the
  * variables. You can call it from any place in your code and save the data for
  * outputting or displaying later. This allows you to check at different parts of
  * your program flow.
@@ -325,11 +320,181 @@ void printHeapStack()
   printlcdstring((String) n);
 }    
 
-void analogOutput() // output on pins 3 and 5 my partner's voltages
-{
-  int x;
-  x = nodeValuesA0[partnerNode];
-  analogWrite(3, x/4); // analog inputs are 0-1023, outputs are 0-255
-  x = nodeValuesA1[partnerNode];
-  analogWrite(5, x/4);
-}
+]]
+
+
+--***********************************************
+--          SENDING ROUTINE
+--***********************************************
+
+function sendTo()   --to get the nest node to send the data
+ for i=1,numAvNode do 
+    if avNode[i] == destNode then
+        nearestNode=destNode
+        break
+    else
+        local min
+        if avNode[i]-destNode < min then    -- nearestNode sera celle la plus proche de destNode dans l'ordre numerique
+           avNode[i]-destNode = min         -- min < 0 si nearestNode précède destNode, min > 0 si suivant
+        end
+        nearestNode = destNode + min
+    end
+ end
+end
+
+--*************************************************
+--              WEB SERVER
+--*************************************************
+
+
+
+-- **************************************************************
+_,RID=node.bootreason()
+
+-- ******* Variables
+myheap=0
+cpt =0 --counter
+ok  =0 --ESPs answer
+ans = "nothing"
+pl2 = "je n y suis pas encore "
+
+-- ******* Code
+
+
+-- ******* WiFi configurations
+
+myNode=numberNodes          -- if network size is 3, there is ESP 0, 1 and 2, so new one is 3
+numberNodes=numberNodes+1   -- and the size increases
+ap_ssid="ESP"..myNode.."_"..numberNodes --this module ssid as ESPXX_YY, XX=nodeID, YY=network size
+ap_pass="" --this module password
+
+wifi_cfg={}
+ip_cfg={ip="192.168."..myNode..".1"}
+wifi_cfg.ssid=ap_ssid --3 next lines to config module access point 
+--wifi_cfg.pwd="" --uncomment if you want a password
+wifi.ap.config(wifi_cfg)
+wifi.ap.setip(ip_cfg) -- ip adress of ap needs to be different than others ESPs' in order to have several ESP in server at the same time
+
+
+-- web page 
+function LoadBuff()
+local buff2 = '<!DOCTYPE HTML><html><head><meta charset="UTF-8"><meta http-equiv="refresh" content="10">\
+<title>MESH NETWORK</title></head><body style="background:skyblue">\
+Hi! This is a first Test to create a MESH NETWORK server using ESP8266! ESP'..myNode..' speaking. I am connected to ESP '..avNode[1]..' among others and sending a very long message to one of them. IPA:  Answer: '..ans..' Time(s:) '..cpt..'</body></html>'
+lenght= #buff2
+
+buff1 = 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n'..
+'Content-Length: '.. lenght ..'\r\n'..
+'Cache-Control: max-age=120\r\n'..
+'Connection: Keep-Alive\r\n\r\n'..buff2
+buff2=nil
+
+local buff4 = '<!DOCTYPE HTML><html><head><meta charset="UTF-8"><meta http-equiv="refresh" content="10">\
+<title>PAGE 1</title></head><body style="background:grey">\
+Welcome on the 1st page of this server'
+lenght4= #buff4
+buff3 = 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n'..
+'Content-Length: '.. lenght4 ..'\r\n'..
+'Cache-Control: max-age=120\r\n'..
+'Connection: Keep-Alive\r\n\r\n'..buff4
+buff4=nil
+
+collectgarbage()
+end
+
+
+
+-- Server
+function StartServer()
+srv = net.createServer(net.TCP) --, 120) --120 = timeout
+local myPort=30000+myNode
+
+--listening to other nodes
+srv:listen(myPort, function (conn) 
+            conn:on("receive",
+            function (sk, str)
+                print(str)
+                if str ~= nil then
+                    sk:send("OK")
+                end
+                receivedString = str        
+                processReceivedString(receivedString)
+                collectgarbage()
+            end)
+            conn:on("sent", function(sk) sk:close() end)
+            end)
+
+--listening to Web request
+srv:listen(80, function (sck, pl) 
+            sck:on("receive", 
+            function (sk,string)  
+            -- deal with web interface here
+                sk:send(buff1)
+                end
+            collectgarbage()
+            end)
+            sck:on("sent", function(sck) print (sck) sck:close() end)
+        end)
+end
+
+
+
+--Sending to nearestNode
+
+function sendingMessage()
+
+    sta_ssid = "ESP"..nearestNode.."_"..numberNodes -- your router SSID you want to connect to
+    sta_pass = "" -- your router password you want to connect to
+    wifi.sta.config(sta_ssid, sta_pass) --config to connect to wifi station
+    wifi.sta.connect()
+
+    conn=net.createConnection(net.TCP, 0) --security: , false)
+    local destPort = 30000+nearestNode 
+    conn:connect(destPort,"192.168."..nearestNode..".1") 
+    conn:on("connection", function(conn)
+        print("connection to nearest ESP:")
+        conn:send(myNodeString)
+        conn:on("sent", function(conn) print(conn) end)
+    end)
+    conn:on("receive", function(conn,string) 
+        print(string)
+        if string == "OK" then
+            print("The Message was successfully passed on")
+        else print("An error occured during the communication")
+        end
+    end)
+end
+
+
+
+--main loop
+tmr.alarm(0,100,1,
+    function()
+        if newNode ==1 then --if a new Node appeared we need to change the ssid of myNode ('cause the size is shown in it)
+            numberNodes = numberNodes+1
+            ap_ssid = "ESP"..myNode.."_"..numberNodes 
+            wifi_cfg.ssid=ap_ssid --3 next lines to config module access point 
+            wifi.ap.config(wifi_cfg)
+            newNode = 0
+        end 
+        tmr.stop(0)
+        print("Server start")
+        StartServer()
+        --LoadBuff()
+        tmr.alarm(1,1000,1,
+            function()
+                LoadBuff()
+                if wifi.sta.getip()==nil
+                then
+                print("Wait for Destination Node 's IP")
+                else
+                ipa,_,_=wifi.sta.getip()
+                print("Destination Node's IP is ",ipa)
+                tmr.stop(1)
+                sendingMessage()
+                end
+             end) 
+end)
+         
+
+
