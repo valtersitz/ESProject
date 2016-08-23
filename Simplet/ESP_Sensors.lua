@@ -1,5 +1,34 @@
 wifi.setmode(wifi.SOFTAP)    --turn on wifi
 
+------------ Sensors Variables ----- 
+
+pwm.setup(3,500,1023)
+pwm.start(3)
+pwm.setduty(3,1023)
+
+gpio.mode(1, gpio.OUTPUT)
+gpio.mode(2, gpio.OUTPUT)
+gpio.mode(4, gpio.OUTPUT)
+gpio.mode(5, gpio.OUTPUT)
+gpio.mode(6, gpio.OUTPUT)
+gpio.write(1, gpio.LOW)
+gpio.write(2, gpio.LOW)
+gpio.write(4, gpio.LOW)
+gpio.write(5, gpio.LOW)
+gpio.write(6, gpio.HIGH)
+
+gpio.mode(0, gpio.INPUT, gpio.PULLUP)
+
+ambiente, vermelho, verde, azul = 0,1,2,3
+cor = 4
+cont = 512
+apro = 512
+limite = 800
+x, ok = 0,0
+
+led_cor = {}
+
+-------------------------------------------- 
 
 -- Message Processing Variables
 
@@ -60,7 +89,7 @@ end
 
 function createDataMessage() --  create data string
   myString = "Time"..tmr.time().."_Data"
-  myString = myString..valueSensor1..valueSensor2..valueSensor3..valueSensor4..command
+  myString = myString..valueSensor1..":"..valueSensor2..":"..valueSensor3..":"..valueSensor4..":"..command
   print("My String is: "..myString)
   return myString
 end  
@@ -75,37 +104,192 @@ function updateCommand(command)
 end
 
 
-function updateMyValues() --sensors - be sure to adc.force_init_mode(adc.INIT_ADC) in init.lua
-  gpio.mode(5,gpio.OUTPUT) -- GPIO14 output
-  gpio.mode(0,gpio.OUTPUT) -- GPIO16 output
-  --set ADC
-  gpio.write(5, gpio.LOW)
-  gpio.write(0, gpio.LOW)
-  valueSensor1 = adc.read(0)  --read adc entry. ADC RETURNS 10 BITS, SHOULD BE CORRECTED
-  print("VS1 "..valueSensor1)
-  tmr.delay(10)                     --next tmr - MUST be improve! make de proc busy for 10us, not te best option
-  gpio.write(5, gpio.HIGH)
-  gpio.write(0, gpio.LOW)
-  valueSensor2 = adc.read(0) 
-  print("VS2 "..valueSensor2) 
-  tmr.delay(10)--next tmr
-  gpio.write(5, gpio.LOW)
-  gpio.write(0, gpio.HIGH)
-  valueSensor3 = adc.read(0)  
-  print("VS3 "..valueSensor3)
-  tmr.delay(10)--next tmr
-  gpio.write(5, gpio.HIGH)
-  gpio.write(0, gpio.HIGH)
-  valueSensor4 = adc.read(0) 
-  print("VS4 "..valueSensor4)
-  tmr.delay(10) 
+function adc_ler(media,x)   
+    while(x < 833)do
+        media = media + adc.read(0)
+        tmr.delay(10)
+        x = x + 1 
+    end
+    adc_valor = media/833
 end
 
+function updateMyValues()
+    adc_ler(0,0)
+    
+    if(cor==ambiente)then
+       limite = limite + adc_valor
+       print("limite is "..limite)
+       cor = vermelho
+    end
+
+    if(cor==vermelho)then
+        gpio.write(1, gpio.LOW)
+        gpio.write(2, gpio.LOW)
+        gpio.write(4, gpio.HIGH)
+
+        print("adc_valor red is "..adc_valor)
+        if(adc_valor > limite and adc_valor < (limite+5))then
+                 led_cor[vermelho] = pwm.getduty(3)
+                 cor = verde
+                 cont = 512
+                 apro = 512
+                 adc_valor = 0
+                 pwm.setduty(3,1023)   
+        elseif(adc_valor < limite)then
+                 apro = apro - cont
+                    if(apro == 0)then
+                        apro = 512
+                    end
+                 pwm.setduty(3, apro)
+                 cont = cont/2
+        elseif(adc_valor > (limite+5))then
+                 apro = apro + cont
+                    if(apro == 1024)then
+                        apro = 512
+                    end
+                 pwm.setduty(3, apro)
+                 cont = cont/2
+        end
+    end
+    
+    if(cor==verde)then
+        gpio.write(1, gpio.HIGH)
+        gpio.write(2, gpio.LOW)
+        gpio.write(4, gpio.LOW)
+
+        print("adc_valor green is "..adc_valor)
+        if(adc_valor > limite and adc_valor < (limite+5))then
+                 led_cor[verde] = pwm.getduty(3)
+                 cor = azul
+                 cont = 512
+                 apro = 512
+                 adc_valor = 0
+                 pwm.setduty(3,1023)   
+        elseif(adc_valor < limite)then
+                 apro = apro - cont
+                    if(apro == 0)then
+                        apro = 512
+                    end
+                 pwm.setduty(3, apro)
+                 cont = cont/2
+        elseif(adc_valor > (limite+5))then
+                 apro = apro + cont
+                    if(apro == 1024)then
+                        apro = 512
+                    end
+                 pwm.setduty(3, apro)
+                 cont = cont/2
+        end
+     end
+     
+     if(cor==azul)then
+        gpio.write(1, gpio.LOW)
+        gpio.write(2, gpio.HIGH)
+        gpio.write(4, gpio.LOW)
+
+        print("adc_valor blue is "..adc_valor)
+        if(adc_valor > limite and adc_valor < (limite+5))then
+                 led_cor[azul] = pwm.getduty(3)
+                 cor = 4
+                 cont = 512
+                 apro = 512
+                 adc_valor = 0
+                 pwm.setduty(3,1023)   
+        elseif(adc_valor < limite)then
+                 apro = apro - cont
+                    if(apro == 0)then
+                        apro = 512
+                    end
+                 pwm.setduty(3,apro)
+                 cont = cont/2
+        elseif(adc_valor > (limite+5))then
+                 apro = apro + cont
+                    if(apro == 1023)then
+                        apro = 512
+                    end
+                 pwm.setduty(3,apro)
+                 cont = cont/2
+        end
+     end
+     
+     if(cor==4)then
+        if(gpio.read(0) == 0)then
+             if(ok==1)then
+             -- Leitura de concentracao
+                gpio.write(5, gpio.LOW)
+                gpio.write(6, gpio.HIGH)
+
+                adc_ler(0,0)
+                led_cor[ambiente] = adc_valor
+             
+                gpio.write(1, gpio.LOW)
+                gpio.write(2, gpio.LOW)
+                gpio.write(4, gpio.HIGH)
+                pwm.setduty(3, led_cor[vermelho])
+                tmr.delay(10)
+                adc_ler(0,0)
+                adc_valor = adc_valor - led_cor[ambiente]
+                print("adc_valor red is now "..adc_valor)
+                valueSensor1=adc_valor
+                
+                gpio.write(1, gpio.HIGH)
+                gpio.write(2, gpio.LOW)
+                gpio.write(4, gpio.LOW)
+                pwm.setduty(3, led_cor[verde])
+                tmr.delay(10)
+                adc_ler(0,0)
+                adc_valor = adc_valor - led_cor[ambiente]
+                print("adc_valor green is now "..adc_valor)
+                valueSensor2 = adc_valor
+
+                gpio.write(1, gpio.LOW)
+                gpio.write(2, gpio.HIGH)
+                gpio.write(4, gpio.LOW)
+                pwm.setduty(3, led_cor[azul])
+                tmr.delay(10)
+                adc_ler(0,0)
+                adc_valor = adc_valor - led_cor[ambiente]
+                print("adc_valor blue is now "..adc_valor)
+                valueSensor3 = adc_valor
+
+                gpio.write(1, gpio.LOW)
+                gpio.write(2, gpio.LOW)
+                gpio.write(4, gpio.LOW)
+                pwm.setduty(3, 1023)
+
+             -- Leitura de temperatura
+                gpio.write(5, gpio.HIGH)
+                gpio.write(6, gpio.LOW)
+            
+                gpio.write(1, gpio.LOW)
+                gpio.write(2, gpio.LOW)
+                gpio.write(4, gpio.HIGH)
+                pwm.setduty(3, 0)        
+                tmr.delay(10)
+
+                adc_ler(0,0)
+                print("adc_valor Temp is now "..adc_valor)  
+                valueSensor4 = adc_valor 
+            end
+            
+            if(ok==0)then
+             -- Calibracao
+                gpio.write(5, gpio.LOW)
+                gpio.write(6, gpio.HIGH)
+                limite = 800
+                cor = ambiente
+                ok = ok + 1
+            end
+        end
+     end
+end
+
+
 function printNodeData() 
-  print(valueSensor1)
-  print(valueSensor2)
-  print(valueSensor3)
-  print(valueSensor4)
+  print("SV1 red is "..valueSensor1)
+  print("SV2 green is "..valueSensor2)
+  print("SV3 blue is "..valueSensor3)
+  print("SV4 temp is "..valueSensor4)
   print(command)
 end  
     
@@ -116,14 +300,22 @@ end
 --main loop
 tmr.alarm(0,10000,1, function() 
     print("Uploading data...")
-    updateMyValues()
+    -- while the sensors are not ready we won't update the values
+    while (valueSensor1 == nil or valueSensor2 == nil or valueSensor3 == nil or valueSensor4 == nil) do 
+        --updateMyValues()
+        valueSensor1 = 785642
+        valueSensor2 = 79862
+        valueSensor3 = 788652
+        valueSensor4 = 775852
+    end
+    printNodeData()
     createDataMessage()
     tmr.stop(0)
     print("Server start")
     StartServer()
     tmr.alarm(1,8000,1,
         function()
-            updateMyValues()
+            --updateMyValues()
             createDataMessage()
             printNodeData()
             for mac,ip in pairs(wifi.ap.getclient()) do
