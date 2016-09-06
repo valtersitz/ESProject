@@ -1,4 +1,4 @@
-'<!DOCTYPE HTML><html><head><meta charset="UTF-8"><meta http-equiv="refresh" content="10">
+<!DOCTYPE HTML><html><head><meta charset="UTF-8"><meta http-equiv="refresh" content="10">
 
 <HEAD>
 
@@ -27,22 +27,34 @@
 </TABLE>
 
 <BR>
+<p>1 - How to use the Web Interface: 
+On the main page of this Web Interface you can observe the last sample of data received. 
+-The Time Stamp is the number of seconds since the sensors started (it will reset every 49 days, so please dowload the datafiles before the reset).
+-The First Sensor Value is the Temperature followed by the Red, Green and Blue values.
+-The Set Point stands for a value that triggers the Command value if the temperature is higher. It can be set in the Settings page.
+-The Command value triggers a I/O for an any use necessary
+-The Datafiles are available to download thanks to the Download Data buttons. The size of these files was limited to allow safe download and easy upload in softwares like Matlab. They are .txt files filled with "TimeXXX_DataXXX:XXX:XXX:XXX:X" lines, the "X" being raw sensors values. 
+-The Erase Data button allows you to definitively delete the datafiles.
 
-<li><a href="settings.html">1 - How to</a></li>
+On the Settings page, enter the value of the SetPoint you want and press Enter. For now only the Temperature Setpoint is available. 
+The new Value you enter is saved in the module and replace the previous one. To erase the Setpoint parameter, please press the Erase SetPoint button. </p>
 
-<li><a href="download.html">2 - Hardware and Software</a></li>
+<p>2 - Hardware  The ESP is a brand-new,  very cheap and powerful Wi-Fi module. It may not always be stable: please insure that the following parameters are respected:
+-3.3 V powered.
+-Decoupling capacities as close to the power lines as possible.
+-VCC and EN pins to 3.3V.
+-GND (and GPIO 15 for models later than ESP03) to Ground.
+-For the HotStandBy module, GPIO16 must be connected to RST.
+-For modules with Red LED, it can be removed to save battery life.
+-For modules with external antennas, the capacitor between PCB antenna and external antenna can be removed to increase range. </p>
 
-<li><a href="download.html">3 - Other information</a></li>
+<p>3 - Software  
+The programs are coded in Lua 5.1 using NodeMCU 0.9.6 SDK and Esplorer IDE. 
+-All modules do not have the same memory available. Please check before use and adapt the sample time for downloading and reseting data files.
+-Due to timeout value of ESP_Sensors module please dowload datafiles at least once every 49 days. </p>
 
-<BR>
-<p>1 - How to use: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</p>
-
-<p>2 - Hardware and Software: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</p>
-
-<p>3 - Other information: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</p>
+<p>4 - Other information: 
+This Software (Web Interface, electronic circuits and ESP programs) was developped by Valentin Altersitz, Vandir Junior and Eduardo *PLEASE INSERT HIS LAST NAME HERE* under the direction of André Augusto Mariano at the GICS Laboratory, UFPR. For any information please contact via email: valtersitz@enseirb-matmeca.fr or *YOUR EMAIL ADRESS HERE*</p>
 
 
 

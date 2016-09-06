@@ -1,427 +1,269 @@
-wifi.setmode(wifi.STATIONAP)    --turn on wifi
 
-myNode = 0 --my node number, get this from settings page 
-nodeTime = 0
+SV1, SV2, SV3, SV4, COM = nil
+TsetPoint="-273.15"
+--myRequest="command"..0
 
--- Message Processing Variables
-timeCentral = 0xFFFFF800 -- synchronise with node 0, as can't reset the millis counter. start high so can spot rollover errors (otherwise every 49 days)
---timeOffset  = 0xFFFFF800 -- offset from my local millis counter - numbers set so if program node 0, it does a refresh immediately
-nodeID =0
-valueSensor1={} -- tab to store sensor's values
-valueSensor2={} 
-valueSensor3={} 
-valueSensor4={} 
-command={}
-nodeTimeStamps={} -- timestamps for each value
-lowestNode = 255 -- 0 to 15, 255 is false, 0-15 is node last got a time sync signal from, actually the "main node"
+timeout=0
 
---Message Parsing Variables
---receivedString= "" -- message received
-myNodeString = "" -- message to be sent
---prevNode = nil -- node from which we got the message
---destNode = 0 --node we want to send the message to
-nearestNode = nil -- node we are going to send the message to
+dataFile="data1.txt"
 
--- Mesh Network Variables
-
-myNode=0
-numberNodes = 0  -- number of ESPs in the network, up to 99 for now, setting in the webinterface
-numAvNode = 0 --number of available nodes around
-avNode={} --available nodes around
-newNode = 0 --notification of new node in the network
-
-
-ok  =0 --ESPs answer
-
-
-function configAP()
-   
-              -- if network size is 3, there is ESP 0, 1 and 2, so new one is 3
-    ap_ssid="ESP"..myNode.."_"..numberNodes --this module ssid as ESPXX_YY, XX=nodeID, YY=network size
-    --ap_pass="" --this module password
-    wifi_cfg={}
-    ip_cfg={ip="192.168."..myNode..".1"}
-    print(ip_cfg.ip)
-
-    wifi_cfg.ssid=ap_ssid --3 next lines to config module access point 
-    --wifi_cfg.pwd="" --uncomment if you want a password
-    wifi.ap.config(wifi_cfg)
-    wifi.ap.setip(ip_cfg) -- ip adress of ap needs to be different than others ESPs' in order to have several ESP in server at the same time
+--Data Files
+function getDataFiles()
+    dataFILES = {}
+    sizedataFILES = {}
+    listFile = file.list() 
+    buffer = nil
+    local minFile = 999999
+    local lastFile 
+    i = 0
+    if buffer~= listFile then 
+    buffer = listFile
+    for k,v in pairs(listFile) do
+        if string.find(k, "data") then 
+           dataFILES[i] = k
+           sizedataFILES[k] = v
+           if sizedataFILES[k] < minFile then minFile = sizedataFILES[k]; dataFile=k end 
+           i = i +1
+        end
+    end
+    end
 end
+
+
+    
 
 -- Server
 function StartServer()
-srv = net.createServer(net.TCP) --, 120) --120 = timeout
-local myPort=30000+myNode
+if srv then srv:close() srv=nil end
+srv=net.createServer(net.TCP)
 
-srv:listen(myPort, function (sck)   -- to access web interface: IPadress:NodePort/web
-            sck:on("receive", 
-                function (sk,string)  
-                    webInterface(sk, string)
-                    collectgarbage()
-                end)
-            sck:on("sent", function(sk) print (sk) sk:close() end)
-        end)
-        
 end
 
-function webInterface(socket, string)   -- send to ESP or to WEB Interface according to request
 
-    if string.sub(string,6,8) == "web" then 
-         socket:send(buff1)
-    else print("processing received message")
-         print(string)
+
+function createBuffer()
+    buff = "<TD>"..SV1.."</TD><TD>"..SV2.."</TD><TD>"..SV3.."</TD><TD>"..SV4.."</TD><TD>"..COM.."</TD><TD>"..TsetPoint.."</TD><TD>"..TS.."</TD><TR></TABLE>" 
+    if sizedataFILES[dataFILES[0]] then 
+        for i = 0, #dataFILES do 
+            buff=buff..'<li>  <a href="'..dataFILES[i]..'"> Download '..dataFILES[i]..' </a></li>'
+        end
     end
-    socket:send("OK")
+    buff = buff.."</BODY></HTML>"
+    return buff
 end
 
---Sending to nearestNode
- nearestNode=0
- function configSTA()
 
-end
 
---[[function sendingMessage(nearestNode, myNodeString)
 
-   
-    print("esp ssid"..sta_ssid)
+
+
+function webInterface()
+
+
+local httpRequest={}
+httpRequest["/data1.txt"]="data1.txt";
+httpRequest["/data2.txt"]="data2.txt";
+httpRequest["/data3.txt"]="data3.txt";
+httpRequest["/data4.txt"]="data4.txt";
+httpRequest["/data5.txt"]="data5.txt";
+httpRequest["/texte.txt"]="texte.txt";
+httpRequest["/eraseData.html"]="eraseData.html";
+httpRequest["/eraseSetPoints.html"]="eraseSetPoints.html";
+httpRequest["/main.html"]="main.html";
+httpRequest["/settings.html"]="settings.html";
+httpRequest["/about.html"]="about.html";
+
+
+local getContentType={};
+getContentType["/data1.txt"]="text/txt";
+getContentType["/data2.txt"]="text/txt";
+getContentType["/data3.txt"]="text/txt";
+getContentType["/data4.txt"]="text/txt";
+getContentType["/data5.txt"]="text/txt";
+getContentType["/data6.txt"]="text/txt";
+getContentType["/texte.txt"]="text/txt";
+getContentType["/eraseData.html"]="text/html";
+getContentType["/eraseSetPoints.html"]="text/html";
+getContentType["/main.html"]="text/html";
+getContentType["/settings.html"]="text/html";
+getContentType["/about.html"]="text/html";
+
+
+local filePos = 0
+
+srv:listen(80,function(conn)
+    conn:on("receive", function(con,request)
+        print("New Request");
+        local _, _, method, path, vars = string.find(request, "([A-Z]+) (.+)?(.+) HTTP");
+        if(method == nil)then
+         _, _, method, path = string.find(request, "([A-Z]+) (.+) HTTP");
+         print("path is "..path)
+         print("method is "..method)
+        end
+        formDATA = {}
+        if (vars ~= nil)then
+            for k, v in string.gmatch(vars, "(%w+)=(%w+)&*") do
+                print("["..k.."="..v.."]");
+                formDATA[k] = v
+                if k=='Tsetpoint'  then
+                    local tsetPoint = formDATA[k]
+                    if file.open("setPoints.txt", "w+") then
+                        if file.writeline(tsetPoint) then
+                            file.close()
+                        else print("error writing the file")
+                        end
+                    else print("error opening the file")
+                    end
+                end
+            end   
+        end
     
-    --local sssid=wifi.sta.gethostname()
-    --print("connected to "..sssid)
-
-
-    conn=net.createConnection(net.TCP, 0) --security: , false)
-    local destPort = 30000+nearestNode 
-    print("destPort is "..destPort) 
-    local ipa="192.168."..nearestNode..".1"
-    print(ipa)
-    conn:connect(30000,"192.168.0.1") 
-    print("ici")
-    conn:on("connection", function(conn)
-        print("connection to nearest ESP:")
-        print(myNodeString)
-        conn:send(myNodeString)        
-        conn:on("sent", function(conn) print(conn) end)
-        collectgarbage()
-        print("sent")
-    end)
-    print("here")
-    conn:on("receive", function(conn,string) 
-        print("received is "..string)
-        if string == "OK" then
-            print("The Message was successfully passed on")
-        else print("An error occured during the communication")
+        if getContentType[path] then
+           requestFile=httpRequest[path];
+           print("Sending file "..requestFile); 
+           filePos=0
+           con:send("HTTP/1.1 200 OK\r\nContent-Type: "..getContentType[path].."\r\n\r\n");
+        else
+           print("[File "..path.." not found]");
+           con:send("HTTP/1.1 404 Not Found\r\n\r\n")
+           con:close();
+           collectgarbage();
         end
     end)
-    nearestNode=nil
-end
-]]
-
-
-function listap(t)
-    --print("\n\t\t\tSSID\t\t\t\t\tBSSID\t\t\t  RSSI\t\tAUTHMODE\t\tCHANNEL")
-    for bssid,v in pairs(t) do
-        local ssid, rssi, authmode, channel = string.match(v, "([^,]+),([^,]+),([^,]+),([^,]*)")
-        --print(string.format("%32s",ssid))
-        if string.find(ssid,"ESP") then --if AP starting with "ESP", get the node number
-            numAvNode=numAvNode+1
-            avNode[numAvNode] = string.sub(ssid,4,4) -- for the test
-            --avNode[numAvNode] = string.sub(ssid,4,2) -- give the node ID back
-            numberNodes=string.sub(ssid,6) -- give back the size of the network - SSID = ESPXX_YY
-            newNode = 1  -- tag to know we will need to change suffixe of ssid
-        end
+    conn:on("sent",function(con)
+        if requestFile then
+        if file.open(requestFile,"a+") then
+           file.seek("set",filePos)
+           local partial_data=file.read(617)
+           file.close()
+           if requestFile == "main.html" then partial_data=partial_data..createBuffer()  end
+           if requestFile =="eraseData.html" then for i = 0, #dataFILES do file.remove(dataFILES[i]) end end
+           if requestFile =="eraseSetPoints.html" then file.remove("setPoints.txt") end
+           if partial_data then
+              print(partial_data)
+              print(#partial_data)
+              filePos=filePos+#partial_data
+              print("["..filePos.." bytes sent]")
+              con:send(partial_data)
+           end
+           if (string.len(partial_data)==617) then
+             return;
+           end
+        else
+           print("[Error opening file"..requestFile.."]")
+        end 
     end
-end
-
-
-function  processReceivedString(receivedString) -- returns the location of infos in the message
-   --print(receivedString)
-   if (string.find(receivedString,"Time")) then  
-       local timeLoc = string.find(receivedString,"Time") 
-       local time = processTimeSignal(timeLoc+4, receivedString)
-       if (string.find(receivedString, "Data")) then  
-            local dataLoc = string.find(receivedString,"Data")
-            local destinationNode = processDataMessage(dataLoc+4, receivedString, time)
-            print("destNode is "..destinationNode)
-            myNodeString = createDataMessage(time, destinationNode)
-            nearestNode = sendTo(destinationNode)
-       else print("The message did not return Data") 
-       end -- node,sample,timestamp
-   else print("The message did not return Time") 
-   end -- parse command
    collectgarbage()
-end  
+   print("[Connection closed]")   
+   con:close()
+   end)
+end)
+if path =="/eraseData" then file.remove("data.txt") end   
+end
 
-  
-  
-
-function processTimeSignal(timeLoc, receivedString) -- Synchronize all nodes to the first running node ("main"). pass Time03FFFFFFFF where 03 is the previous node and the rest is the number of ms in hexa
- local nodeTime = ""
- endoftime = string.find(receivedString,"_")
- s = string.sub(receivedString,timeLoc,endoftime-1) --20/07/16 test with time only (no previousnode), delete once done
- lowestNode = string.sub(s,1,1)
- centraltime = string.sub(s,2)
- if tmr.time() < tonumber(centraltime) then        -- if late
-    nodeTime = centraltime              -- get the right time, synchronization of the system
- else 
-    nodeTime = nodeTime..tmr.time()             -- update the system time every time we pass through Main ESP
-    lowestNode = myNode --string.sub(s,1,2)          -- previous main must have stop and hotstandby becomes Main
- end 
- return nodeTime
-end -- issue to solve: every 49 days centralTime must be reset   
-
---[[function nextNode(destNode)
-   if destNode == myNode then   -- deal with the ROUTING PROCESS! a destNode is assigned at the beginning of the message. If reached, destNode incremented or reset, if not send to closest lower node
-    if myNode~=numberNodes-1 then
-        destNode=myNode+1
-    else destNode=0
+function sendingRequest()
+    if file.open("setPoints.txt", "r") then
+        TsetPoint=file.read()
+        print("tsetpoint is ", TsetPoint)
+        file.close()
+    else print("no setPoint file")
+         TsetPoint = "-273.15"
     end
-   end
-   return destNode
-end]]
-
--- cette fonction doit etre adaptée: lorsque plusieurs node, 
--- je dois trouver un moyen de signalé qu'on passe à la node suivante, 
--- puisque tmr.time() change de taille
-function processDataMessage(dataLoc, receivedString, time) -- Data0312AAAAAAAACBBBBBBBBcrlf where 03 is from, 12 is node (hex), AAAA is integer data, C command, BBBBBBBB is the time stamp
-   local s = string.sub(receivedString, dataLoc) 
-   local destNode = string.sub(s,1,2)
-   print("dest node here is ".. destNode)
-   for i = 0, numberNodes-1 do   
-        --nodeID = string.sub(s, dataLoc+2 + i*19, dataLoc+6 + i*19 + 2)   -- 1 data = 2 hexa char, 5 data per node (node and sensors) + 1 command + 8 hexa for timeStamp = 19 char
-        nodeID = string.sub(s, 3 + i*15, 3 + i*15 + 1)   -- 1 data = 2 hexa char, 5 data per node (node and sensors) + 1 command + 8 hexa for timeStamp = 19 char
-        --nodeTimeStamps[i]=string.sub(s, dataLoc+6 + i*19 + 13, dataLoc+6 + i*19 + 21)
-        nodeTimeStamps[i]=string.sub(s, 15 + i*15, 15 + i*15 + 16)
-        print("nodeTimestamp"..i.." is = "..nodeTimeStamps[i])
-        print("time is "..time) 
-        if (nodeTimeStamps[i] < time) then -- /!\ myNode DATA MUST BE UPLOAD AFTER THIS FUNCTION, OTHERWISE DATA WILL BE ERASED - saving latest data (ie of the current loop) to communicate the data through
-            valueSensor1[i]=string.sub(s, 5 + i*15, 5 + i*15 + 1)
-            valueSensor2[i]=string.sub(s, 7 + i*15, 7 + i*15+ 1)
-            valueSensor3[i]=string.sub(s, 9 + i*15, 9 + i*15+ 1)
-            valueSensor4[i]=string.sub(s, 11 + i*15, 11 + i*15+ 1)
-            command[i]=string.sub(s, 13 + i*15, 13 + i*15 + 1)
-        end
-   end
-   if destNode == myNode then   -- deal with the ROUTING PROCESS! a destNode is assigned at the beginning of the message. If reached, destNode incremented or reset, if not send to closest lower node
-        if myNode~=numberNodes-1 then
-            destNode=myNode+1
-        else destNode=0
-        end
-   end
-   return destNode
-end
-   --next = nextNode(destNode)
-   --return next
-   --print("Next Node is: "..next)
-   --updateCommand()
-   --updateMyValues() --read sensors and update myNode values
-   --printmyData()
-   --receivedString = "" --reset received message
- 
-
-
-function createDataMessage(time, destinationNode) -- (read sensors) and create data string
-  local myString = "Time"..time.."_Data"..destinationNode -- should be nodeTime, no? to the destination node
-  for i=0, numberNodes-1, 1 do --change back to numberNodes when sensors are actives
-    myString = myString..i..valueSensor1[i]..valueSensor2[i]..valueSensor3[i]..valueSensor4[i]..command[i]..nodeTimeStamps[i]
-  end
-  print("My String is: "..myString)
-  return myString
-end  
-
---[[function updateCommand()
-  gpio.mode(6,gpio.OUTPUT) -- GPIO12 output
-  if command[myNode] then
-    gpio.write(6, gpio.HIGH)
-  else gpio.write(6, gpio.LOW)
-  end
-end]]
-
---[[function updateMyValue() --sensors - be sure to adc.force_init_mode(adc.INIT_ADC) in init.lua
-  gpio.mode(5,gpio.OUTPUT) -- GPIO14 output
-  gpio.mode(0,gpio.OUTPUT) -- GPIO16 output
-  --set ADC
-  gpio.write(5, gpio.LOW)
-  gpio.write(0, gpio.LOW)
-  valueSensor1[myNode] = adc.read(0)  --read adc entry. ADC RETURNS 10 BITS, SHOULD BE CORRECTED
-  tmr.delay(10)                     --next tmr - MUST be improve! make de proc busy for 10us, not te best option
-  gpio.write(5, gpio.HIGH)
-  gpio.write(0, gpio.LOW)
-  valueSensor2[myNode] = adc.read(0)  
-  tmr.delay(10)--next tmr
-  gpio.write(5, gpio.LOW)
-  gpio.write(0, gpio.HIGH)
-  valueSensor3[myNode] = adc.read(0)  
-  tmr.delay(10)--next tmr
-  gpio.write(5, gpio.HIGH)
-  gpio.write(0, gpio.HIGH)
-  valueSensor4[myNode] = adc.read(0) 
-  tmr.delay(10) 
-  nodeTimestamps[myNode] = timeCentral --this was updated now
-end]]
-
-function printNodeData() 
-  --print(receivedString)
-  print(nodeID[0])
-  print(valueSensor1[0])
-  print(valueSensor2[0])
-  print(valueSensor3[0])
-  print(valueSensor4[0])
-  print(nodeTimeStamps[0])
-  --print(centralTime)
-end  
-
-function sendTo(destinationNode)   --to get the nest node to send the data
- local nearNode=0
- local destNode = tonumber(destinationNode)
- print("dest node there is ".. destNode)
- for i=1,numAvNode do 
-    if avNode[i] == destNode then
-        nearNode = destNode
-        return nearNode
-    else    
-        local min = 99
-        if (avNode[i]-destNode) < min then    -- nearestNode sera celle la plus proche de destNode dans l'ordre numerique
-           min = avNode[i]-destNode         -- min < 0 si nearestNode précède destNode, min > 0 si suivant
-        end
-        nearNode = destNode + min
-        print("nearNOde "..nearNode)
-    end
- end
- return nearNode
-end
-
-
-function configAP()
-   
-    myNode=numberNodes          -- if network size is 3, there is ESP 0, 1 and 2, so new one is 3
-    ap_ssid="ESP"..myNode.."_"..numberNodes --this module ssid as ESPXX_YY, XX=nodeID, YY=network size
-    --ap_pass="" --this module password
-    wifi_cfg={}
-    ip_cfg={ip="192.168."..myNode..".1"}
-
-    if newNode ==1 then --if a new Node appeared we need to change the ssid of myNode ('cause the size is shown in it)
-      numberNodes = numberNodes +1
-      ap_ssid = "ESP"..myNode.."_"..numberNodes 
-      newNode = 0
-    end 
-    wifi_cfg.ssid=ap_ssid --3 next lines to config module access point 
-    --wifi_cfg.pwd="" --uncomment if you want a password
-    wifi.ap.config(wifi_cfg)
-    wifi.ap.setip(ip_cfg) -- ip adress of ap needs to be different than others ESPs' in order to have several ESP in server at the same time
-end
-
--- web page 
-function LoadBuff()
-local buff2 = '<!DOCTYPE HTML><html><head><meta charset="UTF-8"><meta http-equiv="refresh" content="10">\
-<title>MESH NETWORK</title></head><body style="background:skyblue">\
-Hi! This is a first Test to create a MESH NETWORK server using ESP8266! ESP'..myNode..' speaking. I am connected to ESP '..avNode[1]..' among others and sending a very long message to one of them.</body></html>'
-lenght= #buff2
-buff1 = 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n'..
-'Content-Length: '.. lenght ..'\r\n'..
-'Cache-Control: max-age=120\r\n'..
-'Connection: Keep-Alive\r\n\r\n'..buff2
-buff2=nil
-collectgarbage()
-end
-
-
-
--- Server
-function StartServer()
-srv = net.createServer(net.TCP) --, 120) --120 = timeout
-local myPort=30000+myNode
-
-srv:listen(myPort, function (sck)   -- to access web interface: IPadress:NodePort/web
-            sck:on("receive", 
-                function (sk,string)  
-                    webInterface(sk, string)
-                    collectgarbage()
-                end)
-            sck:on("sent", function(sk) print (sk) sk:close() end)
-        end)
-        
-end
-
-function webInterface(socket, string)   -- send to ESP or to WEB Interface according to request
-
-    if string.sub(string,6,8) == "web" then 
-         socket:send(buff1)
-    else print("processing received message")
-         processReceivedString(string)
-    end
-    socket:send("OK")
-end
-
---Config STA
-
---[[function configSTA()--nearestNode)
-    --local forthetest = 1
-    --sta_ssid = "ESP"..nearestNode.."_"..forthetest --numberNodes -- your router SSID you want to connect to
-    local sta_ssid = "ESP0_1" --numberNodes -- your router SSID you want to connect to
-    local sta_pass = "" -- your router password you want to connect to
-    wifi.sta.config(sta_ssid, sta_pass) --config to connect to wifi station
-    wifi.sta.connect()
-                        
-end]]
---Sending to nearestNode
-
---[[function sendingMessage(nearestNode, myNodeString)
-
+    myRequest="command"
+    if SV1 and (SV1 > TsetPoint) then 
+        myRequest=myRequest..1
+        if TsetPoint == "-273.15" then myRequest="command"..0 end
+    else myRequest=myRequest..0 
+    end -- if SV1 (temp) is greater than SetPoint, active command
     
-    conn=net.createConnection(net.TCP, 0) --security: , false)
-    local destPort = 30000+nearestNode 
-    print("destPort is "..destPort) 
-    local ipa="192.168."..nearestNode..".1"
-    --print(ipa)
-    conn:connect(destPort,ipa) 
-    print("ici")
+    conn=net.createConnection(net.TCP, 0)
+    local destPort = 30000 
+    local ipa="192.168.0.1"
+    print("connection to ESP_Sensors:")
     conn:on("connection", function(conn)
-        print("connection to nearest ESP:")
-        conn:send(myNodeString)        
-        conn:on("sent", function(conn) print(conn) end)
+        print("connected to ESP_Sensors:")
+        
+        conn:on("sent", function(conn) print(myRequest) end)
         print("sent")
+        
+        collectgarbage()
     end)
-    print("here")
     conn:on("receive", function(conn,string) 
         print("received is "..string)
-        if string == "OK" then
-            print("The Message was successfully passed on")
-        else print("An error occured during the communication")
-        end
+        processMessage(string)
+        collectgarbage()
     end)
-    nearestNode=nil
-end]]
-           
+    conn:on("disconnection", function(conn, string)
+        print("Disconnected")
+        conn:close()
+    end)
+    conn:connect(destPort,ipa) 
+end
 
+function processMessage(string)
+--writing the string into data.txt
+    if sizedataFILES[dataFile] and (sizedataFILES[dataFile] > 80000) then 
+        local dataFileNumber = string.match(dataFile, "%d")
+        print("dataFileNumber ", dataFileNumber)
+        dataFileNumber = tonumber(dataFileNumber) + 1
+        dataFile="data"..dataFileNumber..".txt"
+    end
+        print("dataFile is ", dataFile)
+    if file.open(dataFile, "a+") then
+        if file.writeline(string) then
+            file.close()
+        else print("error writing the file")
+        end
+    else print("error opening the file")
+    end
+--writing the variables into the web interface
 
+    local VS1Loc = string.find(string,"Data")+4
+    local VS2Loc = string.find(string,":", VS1Loc+1)
+    local VS3Loc = string.find(string,":", VS2Loc+1)
+    local VS4Loc = string.find(string,":", VS3Loc+1)
+    local COMMANDLoc = string.find(string,":", VS4Loc+1)
+    local TSLoc = string.find(string,"Time")
+    
+    SV1 = string.sub(string, VS1Loc, VS2Loc-1)
+    SV2 = string.sub(string, VS2Loc+1, VS3Loc-1)
+    SV3 = string.sub(string, VS3Loc+1, VS4Loc-1)
+    SV4 = string.sub(string, VS4Loc+1, COMMANDLoc-1)
+    COM = string.sub(string, COMMANDLoc+1, COMMANDLoc+2)
+    TS = string.sub(string, TSLoc+4, VS1Loc-6)
+    
+end
 
 
 --main loop
-tmr.alarm(4,10000,1, function() 
-    wifi.sta.getap(1, listap) --do it every 10s to detect new and dead nodes around
-    if numAvNode==0 then
-        print("No nodes availables around")
-        avNode[1] = "no Node around"  -- not to haev error in the buffer. delete this line when the WI is ready
-    else 
-        print(numAvNode.." nodes have been detected")
-        numAvNode=0
-        configAP()
-        tmr.stop(4)--0)
-        print("Server start")
-        LoadBuff()
-        StartServer()
-        tmr.alarm(1,8000,1,
-                function()
-                    LoadBuff()
-                    if nearestNode==nil then
-                        print("Waiting")
-                    else
-                        print("entering hell")
-                        sta_ssid = "ESP"..nearestNode.."_"..numberNodes -- your router SSID you want to connect to
-                        sta_pass = "" -- your router password you want to connect to
-                        print(sta_ssid)
-                    end
-                 end)
+StartServer()
+if wifi.sta.getip()~=nil then
+    getDataFiles()
+    sendingRequest()
+    conn:send(myRequest)
+end
+
+tmr.alarm(0,300000,1, function() 
+    if wifi.sta.getip()==nil then
+       print("Wait for IP")
+       timeout=timeout+1
+       if timeout>10 then node.restart() end
+    else
+       getDataFiles()
+       print("SV1 is ", SV1)
+       sendingRequest()
+       ipa,_,_=wifi.sta.getip()
+       print("Sending Request...")
+       conn:send(myRequest)    -- command value must be precised, otherwise command=0        
     end
+    print("Heap is: "..node.heap())
 end)
+
+tmr.alarm(1,100,1, function()
+    if (SV1 ~= nil and SV2 ~= nil and SV3 ~= nil and SV4 ~= nil and COM ~= nil) then 
+        tmr.stop(1)
+        webInterface()
+    end
+   
+end)
+
