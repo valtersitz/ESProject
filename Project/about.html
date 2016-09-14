@@ -1,0 +1,82 @@
+<!DOCTYPE HTML><html><head><meta charset="UTF-8">
+
+<HEAD>
+
+<TITLE>ESP8266 - About</TITLE>
+
+</HEAD>
+
+<BODY>
+
+<CENTER><FONT COLOR=BLUE SIZE=6>ESP8266 - About</FONT></CENTER>
+
+<BR>
+
+<TABLE>
+
+<TR>
+
+<TD WIDTH=100> <li><a href="main.html">Main</a></li> </TD>
+
+<TD WIDTH=100> <li><a href="settings.html">Settings</a></li> </TD>
+
+<TD WIDTH=100> <li> About </li> </TD>
+
+</TR>
+
+</TABLE>
+
+
+<p>
+<b>1 - How to use the Web Interface: </b><br />
+<br />
+<b>1.1 - Main Page</b> <br />
+On the main page of this Web Interface you can observe the last sample of data and download the file with all the datas received. <br />
+-The Time Stamp is the number of seconds since the sensors started (it will reset every 49 days, so please dowload the datafiles before the reset).<br />
+-The First Sensor Value is the Temperature followed by the Red, Green and Blue values.<br />
+-The Set Point stands for a value that triggers the Command value if the temperature is higher. It can be set in the Settings page.<br />
+-The Command value triggers a I/O for an any use necessary<br />
+-The Datafiles are available to download thanks to the Download Data buttons. The size of these files was limited to allow safe download and easy upload in softwares like Matlab. They are .txt files filled with "TimeXXX_DataXXX:XXX:XXX:XXX:X" lines, the "X" being raw sensors values. <br />
+-The Erase Data button allows you to definitively delete the datafiles.<br />
+<br />
+<b>1.2 - Settings Page</b> <br />
+On the Settings page, enter the value of the SetPoint you want and press Enter. For now only the Temperature Setpoint is available. 
+The new Value you enter is saved in the module and replace the previous one. To erase the Setpoint parameter, please press the Erase SetPoint button. 
+</p>
+<hr width="100%" align="left" noshade>
+
+<p>
+<b>2 - Hardware:</b> <br />
+The ESP is a brand-new,  very cheap and powerful Wi-Fi module. It may not always be stable: please insure that the following parameters are respected:<br />
+<br />
+-3.3 V powered.<br />
+-Decoupling capacities as close to the power lines as possible.<br />
+-VCC and EN pins to 3.3V.<br />
+-GND (and GPIO 15 for models later than ESP03) to Ground.<br />
+-For the HotStandBy module, GPIO16 must be connected to RST.<br />
+-For modules with Red LED, it can be removed to save battery life.<br />
+-For modules with external antennas, the capacitor between PCB antenna and external antenna can be removed to increase range. <br />
+</p>
+<hr width="100%" align="left" noshade>
+
+<p>
+<b>3 - Software </b> <br />
+The programs are coded in Lua 5.1 using NodeMCU 0.9.6 SDK and Esplorer IDE. 
+<br />
+-All modules do not have the same memory available. Please check before use and adapt the sample time for downloading and reseting data files.<br />
+-Due to timeout value of ESP_Sensors module please dowload datafiles at least once every 49 days.<br />
+ </p>
+ <hr width="100%" align="left" noshade>
+
+<p>
+<b>4 - Other information:</b> <br />
+This Software (Web Interface, electronic circuits and ESP programs) was developped by <b>Valentin Altersitz, Vandir Junior and Eduardo Ribeiro</b> under the direction of André Augusto Mariano at the GICS Laboratory, UFPR. <b>For any information please contact via email: valtersitz@enseirb-matmeca.fr or vandirfonseca.jr@gmail.com</b>
+<br />
+</p>
+
+
+
+
+</BODY>
+
+</HTML>
